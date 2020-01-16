@@ -59,6 +59,7 @@ type Config struct {
 	// days
 	LogBackupAge int
 	CallerSkip   int
+	OutputStderr bool // if true, panic recover log outputs to stderr too
 }
 
 func (cfg Config) WithCallerSkip(s int) Config {
@@ -79,16 +80,7 @@ func Configure() Config {
 	}
 }
 
-func toZapConfig(c Config) zapcore.Core {
-	// level config
-	l, ok := zapLevelMap[strings.ToUpper(c.LoggerLevel)]
-	if !ok {
-		l = zap.DebugLevel
-	}
-	var levelEnabler zap.LevelEnablerFunc = func(level zapcore.Level) bool {
-		return level >= l
-	}
-
+func newZapEncoder(c Config) zapcore.Encoder {
 	// log format
 	format := zapcore.EncoderConfig{
 		MessageKey:     "message",
@@ -104,13 +96,23 @@ func toZapConfig(c Config) zapcore.Core {
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 		EncodeName:     zapcore.FullNameEncoder,
 	}
-	var enc zapcore.Encoder
 	if c.LogFormatText {
-		enc = zapcore.NewConsoleEncoder(format)
-	} else {
-		enc = zapcore.NewJSONEncoder(format)
+		return zapcore.NewConsoleEncoder(format)
+	}
+	return zapcore.NewJSONEncoder(format)
+}
+
+func toZapConfig(c Config) (zapcore.Core, zapcore.Core) {
+	// level config
+	l, ok := zapLevelMap[strings.ToUpper(c.LoggerLevel)]
+	if !ok {
+		l = zap.DebugLevel
+	}
+	var levelEnabler zap.LevelEnablerFunc = func(level zapcore.Level) bool {
+		return level >= l
 	}
 
+	encoder := newZapEncoder(c)
 	// log rotate
 	var syncer zapcore.WriteSyncer
 	if len(c.LoggerFile) > 0 {
@@ -126,15 +128,26 @@ func toZapConfig(c Config) zapcore.Core {
 		syncer = StdoutSyncer
 	}
 
-	zap.NewDevelopment()
-	return zapcore.NewCore(enc, syncer, levelEnabler)
+	core := zapcore.NewCore(encoder, syncer, levelEnabler)
+	if !c.OutputStderr {
+		return core, core
+	}
+
+	recoverLevelEnabler := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+		return lvl > zapcore.ErrorLevel
+	})
+	recoverCore := zapcore.NewTee(
+		core,
+		zapcore.NewCore(encoder, StderrSyncer, recoverLevelEnabler))
+	return core, recoverCore
 }
 
 type Logger struct {
 	Config Config
 
-	zapLogger *zap.Logger
-	zapSugar  *zap.SugaredLogger
+	recoverZapCore zapcore.Core
+	zapLogger      *zap.Logger
+	zapSugar       *zap.SugaredLogger
 }
 
 func (l *Logger) Debug(msg string) {
@@ -201,7 +214,7 @@ func (l *Logger) Recover(r interface{}, callerSkip int) {
 		Caller: zapcore.NewEntryCaller(runtime.Caller(callerSkip + 1)),
 		Stack:  zap.Stack("stack").String,
 	}
-	if err := l.zapLogger.Core().With([]zap.Field{zap.Reflect("recover", r)}).Write(e, nil); err != nil {
+	if err := l.recoverZapCore.With([]zap.Field{zap.Reflect("recover", r)}).Write(e, nil); err != nil {
 		fmt.Fprintf(StderrSyncer, "%s\tERROR\t%v\n", time.Now().Format("2006-01-02T15:04:05.000Z0700"), err)
 		fmt.Fprintln(StderrSyncer, util.BytesToStringWithNoCopy(debug.Stack()))
 		StderrSyncer.Sync()
@@ -214,14 +227,16 @@ func (l *Logger) Sync() {
 }
 
 func NewLogger(cfg Config) *Logger {
-	l := zap.New(toZapConfig(cfg),
+	core, recoverCore := toZapConfig(cfg)
+	l := zap.New(core,
 		zap.ErrorOutput(StderrSyncer),
 		zap.AddCaller(),
 		zap.AddCallerSkip(cfg.CallerSkip),
 	)
 	return &Logger{
-		Config:    cfg,
-		zapLogger: l,
-		zapSugar:  l.Sugar(),
+		Config:         cfg,
+		recoverZapCore: recoverCore,
+		zapLogger:      l,
+		zapSugar:       l.Sugar(),
 	}
 }
