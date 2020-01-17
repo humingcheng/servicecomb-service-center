@@ -67,6 +67,8 @@ func Fatalf(err error, format string, args ...interface{}) {
 
 func Sync() {
 	logger.Sync()
+	StderrSyncer.Sync()
+	StdoutSyncer.Sync()
 }
 
 func LogNilOrWarnf(start time.Time, format string, args ...interface{}) {
