@@ -106,6 +106,13 @@ func (i *ClusterIndexer) searchInstances(ctx context.Context, op registry.Plugin
 	return resp, nil
 }
 
+// Creditable implements discovery.Indexer.Creditable.
+// ClusterIndexer's search result's are not creditable as SCClientAggregate
+// ignores sc clients' errors.
+func (i *ClusterIndexer) Creditable() bool {
+	return false
+}
+
 func NewClusterIndexer(t discovery.Type, cache discovery.Cache) *ClusterIndexer {
 	return &ClusterIndexer{
 		CacheIndexer: discovery.NewCacheIndexer(cache),

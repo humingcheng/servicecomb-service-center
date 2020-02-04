@@ -55,6 +55,11 @@ func (i *CacheIndexer) Search(ctx context.Context, opts ...registry.PluginOpOpti
 	return i.EtcdIndexer.Search(ctx, opts...)
 }
 
+// Creditable implements discovery.Indexer.Creditable.
+func (i *CacheIndexer) Creditable() bool {
+	return i.EtcdIndexer.Creditable()
+}
+
 func NewCacheIndexer(cfg *discovery.Config, cache discovery.Cache) *CacheIndexer {
 	return &CacheIndexer{
 		EtcdIndexer:  NewEtcdIndexer(cfg.Key, cfg.Parser),

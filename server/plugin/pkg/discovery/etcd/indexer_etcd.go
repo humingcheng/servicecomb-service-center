@@ -81,6 +81,11 @@ func (i *EtcdIndexer) Search(ctx context.Context, opts ...registry.PluginOpOptio
 	return
 }
 
+// Creditable implements discovery.Indexer.Creditable.
+func (i *EtcdIndexer) Creditable() bool {
+	return true
+}
+
 func NewEtcdIndexer(root string, p pb.Parser) (indexer *EtcdIndexer) {
 	return &EtcdIndexer{Client: backend.Registry(), Parser: p, Root: root}
 }

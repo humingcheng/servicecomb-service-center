@@ -76,6 +76,11 @@ func (i *CacheIndexer) searchByPrefix(op registry.PluginOp) *Response {
 	return resp
 }
 
+// Creditable implements discovery.Indexer.Creditable.
+func (i *CacheIndexer) Creditable() bool {
+	return true
+}
+
 func NewCacheIndexer(cache CacheReader) *CacheIndexer {
 	return &CacheIndexer{
 		Cache: cache,
